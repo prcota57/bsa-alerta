@@ -47,6 +47,9 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
 #btn-apito    { background: linear-gradient(155deg, #2FA8E0, #1B7DB5); }
 #btn-sino     { background: linear-gradient(155deg, #2ECC71, #21A85C); }
 #btn-contagem { background: linear-gradient(155deg, #E8543E, #C43A28); }
+#btn-buzina   { background: linear-gradient(155deg, #8E5CD9, #6A3DB5); }
+#btn-peido    { background: linear-gradient(155deg, #7A8C3E, #5B6B2C); }
+.btn-sound .label small { display:block; font-size:11px; font-weight:600; opacity:0.75; margin-top:2px; }
 
 #countdownOverlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: none;
@@ -78,7 +81,15 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
   </button>
   <button class="btn-sound" id="btn-apito" type="button">
     <span class="emoji">&#9770;</span>
-    <span class="label">Apito</span>
+    <span class="label">Apito<small>de juiz</small></span>
+  </button>
+  <button class="btn-sound" id="btn-buzina" type="button">
+    <span class="emoji">&#9973;</span>
+    <span class="label">Buzina<small>erro</small></span>
+  </button>
+  <button class="btn-sound" id="btn-peido" type="button">
+    <span class="emoji">&#128168;</span>
+    <span class="label">Peido<small>errou feio</small></span>
   </button>
   <button class="btn-sound" id="btn-sino" type="button">
     <span class="emoji">&#128276;</span>
@@ -121,64 +132,169 @@ function getAC(){
   return audioCtx;
 }
 
-/* Uma "palma" individual: ruído filtrado com ataque rápido e decaimento curto */
+/* Uma "palma" individual: ruído filtrado com ataque rápido e decaimento curto.
+   Duas variações de timbre (seca / mais cheia) para parecer mãos diferentes. */
 function tocarPalma(ac, tempo, intensidade){
-  var dur = 0.035 + Math.random()*0.025;
+  var seca = Math.random() < 0.5;
+  var dur = seca ? (0.02 + Math.random()*0.015) : (0.04 + Math.random()*0.035);
   var tamanho = Math.floor(ac.sampleRate * dur);
   var buffer = ac.createBuffer(1, tamanho, ac.sampleRate);
   var dados = buffer.getChannelData(0);
   for(var i=0;i<tamanho;i++){
-    dados[i] = (Math.random()*2-1) * Math.pow(1 - i/tamanho, 2.2);
+    dados[i] = (Math.random()*2-1) * Math.pow(1 - i/tamanho, seca ? 3.2 : 1.8);
   }
   var fonte = ac.createBufferSource();
   fonte.buffer = buffer;
 
   var filtro = ac.createBiquadFilter();
   filtro.type = 'bandpass';
-  filtro.frequency.value = 1200 + Math.random()*2800;
-  filtro.Q.value = 0.7 + Math.random()*0.6;
+  filtro.frequency.value = (seca ? 2200 : 1100) + Math.random()*2600;
+  filtro.Q.value = 0.6 + Math.random()*0.9;
+
+  var filtro2 = ac.createBiquadFilter();
+  filtro2.type = 'highpass';
+  filtro2.frequency.value = 700;
 
   var ganho = ac.createGain();
   ganho.gain.value = intensidade;
 
   fonte.connect(filtro);
-  filtro.connect(ganho);
+  filtro.connect(filtro2);
+  filtro2.connect(ganho);
   ganho.connect(ac.destination);
   fonte.start(tempo);
 }
 
-/* Aplausos de "plateia": muitas palmas escalonadas ao longo do tempo, com efeito de crescimento e queda */
+/* "Murmúrio" de fundo da plateia: ruído contínuo levemente ondulado, dá corpo ao aplauso */
+function tocarMurmurioPlateia(ac, inicio, duracao){
+  var tamanho = Math.floor(ac.sampleRate * duracao);
+  var buffer = ac.createBuffer(1, tamanho, ac.sampleRate);
+  var dados = buffer.getChannelData(0);
+  var ultimo = 0;
+  for(var i=0;i<tamanho;i++){
+    var branco = Math.random()*2-1;
+    ultimo = (ultimo + 0.04*branco) / 1.04; /* leve suavização = ruído mais "rosa" */
+    dados[i] = ultimo * 3.0;
+  }
+  var fonte = ac.createBufferSource();
+  fonte.buffer = buffer;
+  var filtro = ac.createBiquadFilter();
+  filtro.type = 'bandpass';
+  filtro.frequency.value = 1000;
+  filtro.Q.value = 0.5;
+  var ganho = ac.createGain();
+  var t0 = inicio, t1 = inicio+duracao*0.25, t2 = inicio+duracao*0.75, t3 = inicio+duracao;
+  ganho.gain.setValueAtTime(0.0001, t0);
+  ganho.gain.exponentialRampToValueAtTime(0.05, t1);
+  ganho.gain.setValueAtTime(0.05, t2);
+  ganho.gain.exponentialRampToValueAtTime(0.0001, t3);
+  fonte.connect(filtro); filtro.connect(ganho); ganho.connect(ac.destination);
+  fonte.start(inicio);
+}
+
+/* Aplausos de "plateia": murmúrio de fundo + centenas de palmas escalonadas, com crescimento e queda naturais */
 function tocarAplausos(){
   var ac = getAC();
   var agora = ac.currentTime;
-  var duracao = 2.6;
-  var totalPalmas = 130;
+  var duracao = 2.8;
+  tocarMurmurioPlateia(ac, agora, duracao);
+  var totalPalmas = 170;
   for(var i=0;i<totalPalmas;i++){
     var progresso = i / totalPalmas;
-    /* envelope: cresce rápido no início, sustenta, cai suavemente no final */
-    var envelope = progresso < 0.15 ? (progresso/0.15) : (progresso > 0.7 ? Math.max(0, 1 - (progresso-0.7)/0.3) : 1);
+    /* envelope: cresce rápido no início, sustenta cheio, cai suavemente no final */
+    var envelope = progresso < 0.12 ? (progresso/0.12) : (progresso > 0.68 ? Math.max(0, 1 - (progresso-0.68)/0.32) : 1);
     var t = agora + Math.random()*duracao;
-    var intensidade = (0.10 + Math.random()*0.12) * envelope;
+    var intensidade = (0.09 + Math.random()*0.13) * envelope;
     tocarPalma(ac, t, intensidade);
   }
 }
 
-/* Apito de treino: varredura de frequência aguda, típico de apito esportivo */
+/* Apito de juiz de futebol: apito de bolinha (pea whistle) — tom agudo com trilo/vibrato
+   causado pela bolinha girando dentro do apito, em dois toques curtos (como marcação de falta) */
+function tocarBipeApitoJuiz(ac, inicio, duracao){
+  var portadora = ac.createOscillator();
+  var lfo = ac.createOscillator();
+  var lfoGanho = ac.createGain();
+  portadora.type = 'square';
+  portadora.frequency.value = 3000;
+  lfo.type = 'sine';
+  lfo.frequency.value = 22; /* velocidade do trilo da bolinha */
+  lfoGanho.gain.value = 220; /* profundidade do vibrato */
+  lfo.connect(lfoGanho);
+  lfoGanho.connect(portadora.frequency);
+
+  var ganho = ac.createGain();
+  ganho.gain.setValueAtTime(0.0001, inicio);
+  ganho.gain.exponentialRampToValueAtTime(0.28, inicio + 0.015);
+  ganho.gain.setValueAtTime(0.28, inicio + duracao - 0.03);
+  ganho.gain.exponentialRampToValueAtTime(0.0001, inicio + duracao);
+
+  portadora.connect(ganho); ganho.connect(ac.destination);
+  lfo.start(inicio); portadora.start(inicio);
+  lfo.stop(inicio + duracao + 0.02); portadora.stop(inicio + duracao + 0.02);
+}
 function tocarApito(){
   var ac = getAC();
   var agora = ac.currentTime;
+  tocarBipeApitoJuiz(ac, agora, 0.32);
+  tocarBipeApitoJuiz(ac, agora + 0.4, 0.55);
+}
+
+/* Buzina de navio (sinal de erro): tom grave e prolongado, rico em harmônicos, típico de buzina de embarcação */
+function tocarBuzina(){
+  var ac = getAC();
+  var agora = ac.currentTime;
+  var duracao = 1.6;
+  var fundamental = 95;
+  [1, 2, 2.51, 3.98].forEach(function(mult, idx){
+    var osc = ac.createOscillator();
+    osc.type = idx===0 ? 'sawtooth' : 'sine';
+    osc.frequency.setValueAtTime(fundamental*mult, agora);
+    osc.frequency.linearRampToValueAtTime(fundamental*mult*0.94, agora + duracao); /* leve queda de tom no final, como buzina real */
+    var g = ac.createGain();
+    var vol = idx===0 ? 0.30 : 0.30/(idx*2.2);
+    g.gain.setValueAtTime(0.0001, agora);
+    g.gain.exponentialRampToValueAtTime(vol, agora + 0.25);
+    g.gain.setValueAtTime(vol, agora + duracao - 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, agora + duracao);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(agora); osc.stop(agora + duracao + 0.05);
+  });
+}
+
+/* Peido: som cômico para marcar erro feio — oscilador grave com "wah" descendente e textura áspera */
+function tocarPeido(){
+  var ac = getAC();
+  var agora = ac.currentTime;
+  var duracao = 0.7;
+
   var osc = ac.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(140, agora);
+  osc.frequency.linearRampToValueAtTime(70, agora + duracao*0.5);
+  osc.frequency.linearRampToValueAtTime(50, agora + duracao);
+
+  /* jitter: pequenas variações rápidas de frequência para dar a textura "molhada" */
+  var jitter = ac.createOscillator();
+  var jitterGanho = ac.createGain();
+  jitter.type = 'sine'; jitter.frequency.value = 35;
+  jitterGanho.gain.value = 18;
+  jitter.connect(jitterGanho); jitterGanho.connect(osc.frequency);
+
+  var shaper = ac.createWaveShaper();
+  var curva = new Float32Array(256);
+  for(var i=0;i<256;i++){ var x = i/128-1; curva[i] = Math.tanh(x*3.5); }
+  shaper.curve = curva;
+
   var ganho = ac.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(2200, agora);
-  osc.frequency.linearRampToValueAtTime(2600, agora + 0.08);
-  osc.frequency.linearRampToValueAtTime(2200, agora + 0.5);
-  ganho.gain.setValueAtTime(0, agora);
-  ganho.gain.linearRampToValueAtTime(0.25, agora + 0.02);
-  ganho.gain.setValueAtTime(0.25, agora + 0.45);
-  ganho.gain.linearRampToValueAtTime(0, agora + 0.55);
-  osc.connect(ganho); ganho.connect(ac.destination);
-  osc.start(agora); osc.stop(agora + 0.6);
+  ganho.gain.setValueAtTime(0.0001, agora);
+  ganho.gain.exponentialRampToValueAtTime(0.22, agora + 0.03);
+  ganho.gain.setValueAtTime(0.20, agora + duracao*0.7);
+  ganho.gain.exponentialRampToValueAtTime(0.0001, agora + duracao);
+
+  osc.connect(shaper); shaper.connect(ganho); ganho.connect(ac.destination);
+  jitter.start(agora); osc.start(agora);
+  jitter.stop(agora + duracao + 0.05); osc.stop(agora + duracao + 0.05);
 }
 
 /* Sino: sinaliza fim de rodada/atividade */
@@ -245,6 +361,8 @@ function iniciarContagem(){
 
 document.getElementById('btn-aplausos').addEventListener('click', tocarAplausos);
 document.getElementById('btn-apito').addEventListener('click', tocarApito);
+document.getElementById('btn-buzina').addEventListener('click', tocarBuzina);
+document.getElementById('btn-peido').addEventListener('click', tocarPeido);
 document.getElementById('btn-sino').addEventListener('click', tocarSino);
 document.getElementById('btn-contagem').addEventListener('click', iniciarContagem);
 </script>
