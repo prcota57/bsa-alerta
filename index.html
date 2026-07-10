@@ -45,18 +45,9 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
 
 #btn-aplausos { background: linear-gradient(155deg, #FFB020, #E8871C); }
 #btn-apito    { background: linear-gradient(155deg, #2FA8E0, #1B7DB5); }
-#btn-sino     { background: linear-gradient(155deg, #2ECC71, #21A85C); }
-#btn-contagem { background: linear-gradient(155deg, #E8543E, #C43A28); }
 #btn-buzina   { background: linear-gradient(155deg, #8E5CD9, #6A3DB5); }
 #btn-peido    { background: linear-gradient(155deg, #7A8C3E, #5B6B2C); }
 .btn-sound .label small { display:block; font-size:11px; font-weight:600; opacity:0.75; margin-top:2px; }
-
-#countdownOverlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: none;
-  align-items: center; justify-content: center; z-index: 300;
-}
-#countdownOverlay.active { display: flex; }
-#countdownNum { font-size: 140px; font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; }
 
 #wakeBadge {
   position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 0; right: 0;
@@ -91,21 +82,9 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
     <span class="emoji">&#128168;</span>
     <span class="label">Peido<small>errou feio</small></span>
   </button>
-  <button class="btn-sound" id="btn-sino" type="button">
-    <span class="emoji">&#128276;</span>
-    <span class="label">Sino / Fim</span>
-  </button>
-  <button class="btn-sound" id="btn-contagem" type="button">
-    <span class="emoji">&#9203;</span>
-    <span class="label">Contagem 3-2-1</span>
-  </button>
 </div>
 
 <div id="wakeBadge">tela ativa durante o uso</div>
-
-<div id="countdownOverlay">
-  <div id="countdownNum">3</div>
-</div>
 
 <script>
 /* ---------- Wake Lock: mantém a tela acesa enquanto o módulo estiver aberto ---------- */
@@ -297,74 +276,10 @@ function tocarPeido(){
   jitter.stop(agora + duracao + 0.05); osc.stop(agora + duracao + 0.05);
 }
 
-/* Sino: sinaliza fim de rodada/atividade */
-function tocarSino(){
-  var ac = getAC();
-  var agora = ac.currentTime;
-  [880, 1320, 1760].forEach(function(freq, idx){
-    var osc = ac.createOscillator();
-    var ganho = ac.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    var inicio = agora + idx*0.02;
-    ganho.gain.setValueAtTime(0.0001, inicio);
-    ganho.gain.exponentialRampToValueAtTime(0.22 / (idx+1), inicio + 0.02);
-    ganho.gain.exponentialRampToValueAtTime(0.0001, inicio + 1.4);
-    osc.connect(ganho); ganho.connect(ac.destination);
-    osc.start(inicio); osc.stop(inicio + 1.5);
-  });
-}
-
-/* Beep curto usado na contagem regressiva */
-function tocarBeep(freq, dur){
-  var ac = getAC();
-  var agora = ac.currentTime;
-  var osc = ac.createOscillator();
-  var ganho = ac.createGain();
-  osc.type = 'sine';
-  osc.frequency.value = freq;
-  ganho.gain.setValueAtTime(0.0001, agora);
-  ganho.gain.exponentialRampToValueAtTime(0.3, agora + 0.01);
-  ganho.gain.exponentialRampToValueAtTime(0.0001, agora + dur);
-  osc.connect(ganho); ganho.connect(ac.destination);
-  osc.start(agora); osc.stop(agora + dur + 0.05);
-}
-
-/* Contagem regressiva 3-2-1 com apito final */
-var contagemRodando = false;
-function iniciarContagem(){
-  if(contagemRodando) return;
-  contagemRodando = true;
-  getAC();
-  var overlay = document.getElementById('countdownOverlay');
-  var num = document.getElementById('countdownNum');
-  overlay.classList.add('active');
-  var valores = [3,2,1];
-  var i = 0;
-  function passo(){
-    if(i < valores.length){
-      num.textContent = valores[i];
-      tocarBeep(660, 0.18);
-      i++;
-      setTimeout(passo, 800);
-    }else{
-      num.textContent = 'VAI!';
-      tocarApito();
-      setTimeout(function(){
-        overlay.classList.remove('active');
-        contagemRodando = false;
-      }, 700);
-    }
-  }
-  passo();
-}
-
 document.getElementById('btn-aplausos').addEventListener('click', tocarAplausos);
 document.getElementById('btn-apito').addEventListener('click', tocarApito);
 document.getElementById('btn-buzina').addEventListener('click', tocarBuzina);
 document.getElementById('btn-peido').addEventListener('click', tocarPeido);
-document.getElementById('btn-sino').addEventListener('click', tocarSino);
-document.getElementById('btn-contagem').addEventListener('click', iniciarContagem);
 </script>
 </body>
 </html>
