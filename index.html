@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BSA Alerta">
+<title>BSA Alerta</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; -webkit-user-select: none; user-select: none; }
+body { display: flex; flex-direction: column; background: #0B0F10; }
+
+#topbar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 12px;
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-bottom: 14px; padding-left: 18px; padding-right: 18px;
+  background: rgba(0,0,0,0.4);
+}
+.btn-hub {
+  width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.12);
+  color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center;
+  text-decoration: none; flex: 0 0 auto;
+}
+#topbar h1 { font-size: 18px; font-weight: 800; color: #fff; }
+#topbar .sub { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 1px; }
+
+#grid {
+  flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.btn-sound {
+  border: none; border-radius: 22px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  font-family: inherit; color: #fff; -webkit-appearance: none; appearance: none;
+  transition: transform 0.08s ease;
+}
+.btn-sound:active { transform: scale(0.95); }
+.btn-sound .emoji { font-size: 44px; line-height: 1; }
+.btn-sound .label { font-size: 15px; font-weight: 800; }
+
+#btn-aplausos { background: linear-gradient(155deg, #FFB020, #E8871C); }
+#btn-apito    { background: linear-gradient(155deg, #2FA8E0, #1B7DB5); }
+#btn-sino     { background: linear-gradient(155deg, #2ECC71, #21A85C); }
+#btn-contagem { background: linear-gradient(155deg, #E8543E, #C43A28); }
+
+#countdownOverlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: none;
+  align-items: center; justify-content: center; z-index: 300;
+}
+#countdownOverlay.active { display: flex; }
+#countdownNum { font-size: 140px; font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; }
+
+#wakeBadge {
+  position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 0; right: 0;
+  text-align: center; font-size: 11px; color: rgba(255,255,255,0.3); pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <a class="btn-hub" href="https://prcota57.github.io/BSA-cadastro/" title="Voltar ao início">&#8592;</a>
+  <div>
+    <h1>BSA Alerta</h1>
+    <div class="sub">Sons para treino em campo</div>
+  </div>
+</div>
+
+<div id="grid">
+  <button class="btn-sound" id="btn-aplausos" type="button">
+    <span class="emoji">&#128079;</span>
+    <span class="label">Aplausos</span>
+  </button>
+  <button class="btn-sound" id="btn-apito" type="button">
+    <span class="emoji">&#9770;</span>
+    <span class="label">Apito</span>
+  </button>
+  <button class="btn-sound" id="btn-sino" type="button">
+    <span class="emoji">&#128276;</span>
+    <span class="label">Sino / Fim</span>
+  </button>
+  <button class="btn-sound" id="btn-contagem" type="button">
+    <span class="emoji">&#9203;</span>
+    <span class="label">Contagem 3-2-1</span>
+  </button>
+</div>
+
+<div id="wakeBadge">tela ativa durante o uso</div>
+
+<div id="countdownOverlay">
+  <div id="countdownNum">3</div>
+</div>
+
+<script>
+/* ---------- Wake Lock: mantém a tela acesa enquanto o módulo estiver aberto ---------- */
+var wakeLock = null;
+async function pedirWakeLock(){
+  try{
+    if('wakeLock' in navigator){
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  }catch(e){ /* dispositivo sem suporte — sem problema */ }
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible') pedirWakeLock();
+});
+pedirWakeLock();
+
+/* ---------- Áudio sintetizado (Web Audio API) — sem depender de arquivos externos ---------- */
+var audioCtx = null;
+function getAC(){
+  if(!audioCtx || audioCtx.state === 'closed'){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+/* Uma "palma" individual: ruído filtrado com ataque rápido e decaimento curto */
+function tocarPalma(ac, tempo, intensidade){
+  var dur = 0.035 + Math.random()*0.025;
+  var tamanho = Math.floor(ac.sampleRate * dur);
+  var buffer = ac.createBuffer(1, tamanho, ac.sampleRate);
+  var dados = buffer.getChannelData(0);
+  for(var i=0;i<tamanho;i++){
+    dados[i] = (Math.random()*2-1) * Math.pow(1 - i/tamanho, 2.2);
+  }
+  var fonte = ac.createBufferSource();
+  fonte.buffer = buffer;
+
+  var filtro = ac.createBiquadFilter();
+  filtro.type = 'bandpass';
+  filtro.frequency.value = 1200 + Math.random()*2800;
+  filtro.Q.value = 0.7 + Math.random()*0.6;
+
+  var ganho = ac.createGain();
+  ganho.gain.value = intensidade;
+
+  fonte.connect(filtro);
+  filtro.connect(ganho);
+  ganho.connect(ac.destination);
+  fonte.start(tempo);
+}
+
+/* Aplausos de "plateia": muitas palmas escalonadas ao longo do tempo, com efeito de crescimento e queda */
+function tocarAplausos(){
+  var ac = getAC();
+  var agora = ac.currentTime;
+  var duracao = 2.6;
+  var totalPalmas = 130;
+  for(var i=0;i<totalPalmas;i++){
+    var progresso = i / totalPalmas;
+    /* envelope: cresce rápido no início, sustenta, cai suavemente no final */
+    var envelope = progresso < 0.15 ? (progresso/0.15) : (progresso > 0.7 ? Math.max(0, 1 - (progresso-0.7)/0.3) : 1);
+    var t = agora + Math.random()*duracao;
+    var intensidade = (0.10 + Math.random()*0.12) * envelope;
+    tocarPalma(ac, t, intensidade);
+  }
+}
+
+/* Apito de treino: varredura de frequência aguda, típico de apito esportivo */
+function tocarApito(){
+  var ac = getAC();
+  var agora = ac.currentTime;
+  var osc = ac.createOscillator();
+  var ganho = ac.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(2200, agora);
+  osc.frequency.linearRampToValueAtTime(2600, agora + 0.08);
+  osc.frequency.linearRampToValueAtTime(2200, agora + 0.5);
+  ganho.gain.setValueAtTime(0, agora);
+  ganho.gain.linearRampToValueAtTime(0.25, agora + 0.02);
+  ganho.gain.setValueAtTime(0.25, agora + 0.45);
+  ganho.gain.linearRampToValueAtTime(0, agora + 0.55);
+  osc.connect(ganho); ganho.connect(ac.destination);
+  osc.start(agora); osc.stop(agora + 0.6);
+}
+
+/* Sino: sinaliza fim de rodada/atividade */
+function tocarSino(){
+  var ac = getAC();
+  var agora = ac.currentTime;
+  [880, 1320, 1760].forEach(function(freq, idx){
+    var osc = ac.createOscillator();
+    var ganho = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    var inicio = agora + idx*0.02;
+    ganho.gain.setValueAtTime(0.0001, inicio);
+    ganho.gain.exponentialRampToValueAtTime(0.22 / (idx+1), inicio + 0.02);
+    ganho.gain.exponentialRampToValueAtTime(0.0001, inicio + 1.4);
+    osc.connect(ganho); ganho.connect(ac.destination);
+    osc.start(inicio); osc.stop(inicio + 1.5);
+  });
+}
+
+/* Beep curto usado na contagem regressiva */
+function tocarBeep(freq, dur){
+  var ac = getAC();
+  var agora = ac.currentTime;
+  var osc = ac.createOscillator();
+  var ganho = ac.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  ganho.gain.setValueAtTime(0.0001, agora);
+  ganho.gain.exponentialRampToValueAtTime(0.3, agora + 0.01);
+  ganho.gain.exponentialRampToValueAtTime(0.0001, agora + dur);
+  osc.connect(ganho); ganho.connect(ac.destination);
+  osc.start(agora); osc.stop(agora + dur + 0.05);
+}
+
+/* Contagem regressiva 3-2-1 com apito final */
+var contagemRodando = false;
+function iniciarContagem(){
+  if(contagemRodando) return;
+  contagemRodando = true;
+  getAC();
+  var overlay = document.getElementById('countdownOverlay');
+  var num = document.getElementById('countdownNum');
+  overlay.classList.add('active');
+  var valores = [3,2,1];
+  var i = 0;
+  function passo(){
+    if(i < valores.length){
+      num.textContent = valores[i];
+      tocarBeep(660, 0.18);
+      i++;
+      setTimeout(passo, 800);
+    }else{
+      num.textContent = 'VAI!';
+      tocarApito();
+      setTimeout(function(){
+        overlay.classList.remove('active');
+        contagemRodando = false;
+      }, 700);
+    }
+  }
+  passo();
+}
+
+document.getElementById('btn-aplausos').addEventListener('click', tocarAplausos);
+document.getElementById('btn-apito').addEventListener('click', tocarApito);
+document.getElementById('btn-sino').addEventListener('click', tocarSino);
+document.getElementById('btn-contagem').addEventListener('click', iniciarContagem);
+</script>
+</body>
+</html>
