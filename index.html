@@ -29,25 +29,24 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
 #topbar h1 { font-size: 18px; font-weight: 800; color: #fff; }
 #topbar .sub { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 1px; }
 
-#grid {
-  flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+#stack {
+  flex: 1; display: flex; flex-direction: column; gap: 14px;
   padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
 .btn-sound {
-  border: none; border-radius: 22px; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 10px;
+  flex: 1; border: none; border-radius: 22px; display: flex; flex-direction: row;
+  align-items: center; justify-content: center; gap: 14px;
   font-family: inherit; color: #fff; -webkit-appearance: none; appearance: none;
   transition: transform 0.08s ease;
 }
-.btn-sound:active { transform: scale(0.95); }
-.btn-sound .emoji { font-size: 44px; line-height: 1; }
-.btn-sound .label { font-size: 15px; font-weight: 800; }
+.btn-sound:active { transform: scale(0.97); }
+.btn-sound .emoji { font-size: 42px; line-height: 1; }
+.btn-sound .label { font-size: 18px; font-weight: 800; text-align: left; }
+.btn-sound .label small { display:block; font-size:12px; font-weight:600; opacity:0.75; margin-top:2px; }
 
-#btn-aplausos { background: linear-gradient(155deg, #FFB020, #E8871C); }
-#btn-apito    { background: linear-gradient(155deg, #2FA8E0, #1B7DB5); }
-#btn-buzina   { background: linear-gradient(155deg, #8E5CD9, #6A3DB5); }
-#btn-peido    { background: linear-gradient(155deg, #7A8C3E, #5B6B2C); }
-.btn-sound .label small { display:block; font-size:11px; font-weight:600; opacity:0.75; margin-top:2px; }
+#btn-erro      { background: linear-gradient(155deg, #8E5CD9, #6A3DB5); }
+#btn-palmas1   { background: linear-gradient(155deg, #2FA8E0, #1B7DB5); }
+#btn-palmas2   { background: linear-gradient(155deg, #FFB020, #E8871C); }
 
 #wakeBadge {
   position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 0; right: 0;
@@ -65,22 +64,18 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
   </div>
 </div>
 
-<div id="grid">
-  <button class="btn-sound" id="btn-aplausos" type="button">
-    <span class="emoji">&#128079;</span>
-    <span class="label">Aplausos</span>
-  </button>
-  <button class="btn-sound" id="btn-apito" type="button">
-    <span class="emoji">&#9770;</span>
-    <span class="label">Apito<small>de juiz</small></span>
-  </button>
-  <button class="btn-sound" id="btn-buzina" type="button">
+<div id="stack">
+  <button class="btn-sound" id="btn-erro" type="button">
     <span class="emoji">&#9973;</span>
-    <span class="label">Buzina<small>erro</small></span>
+    <span class="label">Erro<small>ohh ouuu</small></span>
   </button>
-  <button class="btn-sound" id="btn-peido" type="button">
-    <span class="emoji">&#128168;</span>
-    <span class="label">Peido<small>errou feio</small></span>
+  <button class="btn-sound" id="btn-palmas1" type="button">
+    <span class="emoji">&#128079;</span>
+    <span class="label">Palmas<small>simples</small></span>
+  </button>
+  <button class="btn-sound" id="btn-palmas2" type="button">
+    <span class="emoji">&#127881;</span>
+    <span class="label">Palmas<small>celebração</small></span>
   </button>
 </div>
 
@@ -101,185 +96,24 @@ document.addEventListener('visibilitychange', function(){
 });
 pedirWakeLock();
 
-/* ---------- Áudio sintetizado (Web Audio API) — sem depender de arquivos externos ---------- */
-var audioCtx = null;
-function getAC(){
-  if(!audioCtx || audioCtx.state === 'closed'){
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if(audioCtx.state === 'suspended') audioCtx.resume();
-  return audioCtx;
+/* ---------- Áudio: arquivos mp3 reais, tocados via elemento <audio> ---------- */
+var sons = {
+  erro: new Audio('sounds/erro.mp3'),
+  palmas1: new Audio('sounds/palmas-simples.mp3'),
+  palmas2: new Audio('sounds/palmas-celebracao.mp3')
+};
+/* pré-carrega para tocar sem atraso no primeiro toque */
+Object.keys(sons).forEach(function(k){ sons[k].preload = 'auto'; sons[k].load(); });
+
+function tocar(chave){
+  var audio = sons[chave];
+  audio.currentTime = 0;
+  audio.play().catch(function(e){ /* alguns navegadores bloqueiam até 1º toque do usuário — normal */ });
 }
 
-/* Uma "palma" individual: ruído filtrado com ataque rápido e decaimento curto.
-   Duas variações de timbre (seca / mais cheia) para parecer mãos diferentes. */
-function tocarPalma(ac, tempo, intensidade){
-  var seca = Math.random() < 0.5;
-  var dur = seca ? (0.02 + Math.random()*0.015) : (0.04 + Math.random()*0.035);
-  var tamanho = Math.floor(ac.sampleRate * dur);
-  var buffer = ac.createBuffer(1, tamanho, ac.sampleRate);
-  var dados = buffer.getChannelData(0);
-  for(var i=0;i<tamanho;i++){
-    dados[i] = (Math.random()*2-1) * Math.pow(1 - i/tamanho, seca ? 3.2 : 1.8);
-  }
-  var fonte = ac.createBufferSource();
-  fonte.buffer = buffer;
-
-  var filtro = ac.createBiquadFilter();
-  filtro.type = 'bandpass';
-  filtro.frequency.value = (seca ? 2200 : 1100) + Math.random()*2600;
-  filtro.Q.value = 0.6 + Math.random()*0.9;
-
-  var filtro2 = ac.createBiquadFilter();
-  filtro2.type = 'highpass';
-  filtro2.frequency.value = 700;
-
-  var ganho = ac.createGain();
-  ganho.gain.value = intensidade;
-
-  fonte.connect(filtro);
-  filtro.connect(filtro2);
-  filtro2.connect(ganho);
-  ganho.connect(ac.destination);
-  fonte.start(tempo);
-}
-
-/* "Murmúrio" de fundo da plateia: ruído contínuo levemente ondulado, dá corpo ao aplauso */
-function tocarMurmurioPlateia(ac, inicio, duracao){
-  var tamanho = Math.floor(ac.sampleRate * duracao);
-  var buffer = ac.createBuffer(1, tamanho, ac.sampleRate);
-  var dados = buffer.getChannelData(0);
-  var ultimo = 0;
-  for(var i=0;i<tamanho;i++){
-    var branco = Math.random()*2-1;
-    ultimo = (ultimo + 0.04*branco) / 1.04; /* leve suavização = ruído mais "rosa" */
-    dados[i] = ultimo * 3.0;
-  }
-  var fonte = ac.createBufferSource();
-  fonte.buffer = buffer;
-  var filtro = ac.createBiquadFilter();
-  filtro.type = 'bandpass';
-  filtro.frequency.value = 1000;
-  filtro.Q.value = 0.5;
-  var ganho = ac.createGain();
-  var t0 = inicio, t1 = inicio+duracao*0.25, t2 = inicio+duracao*0.75, t3 = inicio+duracao;
-  ganho.gain.setValueAtTime(0.0001, t0);
-  ganho.gain.exponentialRampToValueAtTime(0.05, t1);
-  ganho.gain.setValueAtTime(0.05, t2);
-  ganho.gain.exponentialRampToValueAtTime(0.0001, t3);
-  fonte.connect(filtro); filtro.connect(ganho); ganho.connect(ac.destination);
-  fonte.start(inicio);
-}
-
-/* Aplausos de "plateia": murmúrio de fundo + centenas de palmas escalonadas, com crescimento e queda naturais */
-function tocarAplausos(){
-  var ac = getAC();
-  var agora = ac.currentTime;
-  var duracao = 2.8;
-  tocarMurmurioPlateia(ac, agora, duracao);
-  var totalPalmas = 170;
-  for(var i=0;i<totalPalmas;i++){
-    var progresso = i / totalPalmas;
-    /* envelope: cresce rápido no início, sustenta cheio, cai suavemente no final */
-    var envelope = progresso < 0.12 ? (progresso/0.12) : (progresso > 0.68 ? Math.max(0, 1 - (progresso-0.68)/0.32) : 1);
-    var t = agora + Math.random()*duracao;
-    var intensidade = (0.09 + Math.random()*0.13) * envelope;
-    tocarPalma(ac, t, intensidade);
-  }
-}
-
-/* Apito de juiz de futebol: apito de bolinha (pea whistle) — tom agudo com trilo/vibrato
-   causado pela bolinha girando dentro do apito, em dois toques curtos (como marcação de falta) */
-function tocarBipeApitoJuiz(ac, inicio, duracao){
-  var portadora = ac.createOscillator();
-  var lfo = ac.createOscillator();
-  var lfoGanho = ac.createGain();
-  portadora.type = 'square';
-  portadora.frequency.value = 3000;
-  lfo.type = 'sine';
-  lfo.frequency.value = 22; /* velocidade do trilo da bolinha */
-  lfoGanho.gain.value = 220; /* profundidade do vibrato */
-  lfo.connect(lfoGanho);
-  lfoGanho.connect(portadora.frequency);
-
-  var ganho = ac.createGain();
-  ganho.gain.setValueAtTime(0.0001, inicio);
-  ganho.gain.exponentialRampToValueAtTime(0.28, inicio + 0.015);
-  ganho.gain.setValueAtTime(0.28, inicio + duracao - 0.03);
-  ganho.gain.exponentialRampToValueAtTime(0.0001, inicio + duracao);
-
-  portadora.connect(ganho); ganho.connect(ac.destination);
-  lfo.start(inicio); portadora.start(inicio);
-  lfo.stop(inicio + duracao + 0.02); portadora.stop(inicio + duracao + 0.02);
-}
-function tocarApito(){
-  var ac = getAC();
-  var agora = ac.currentTime;
-  tocarBipeApitoJuiz(ac, agora, 0.32);
-  tocarBipeApitoJuiz(ac, agora + 0.4, 0.55);
-}
-
-/* Buzina de navio (sinal de erro): tom grave e prolongado, rico em harmônicos, típico de buzina de embarcação */
-function tocarBuzina(){
-  var ac = getAC();
-  var agora = ac.currentTime;
-  var duracao = 1.6;
-  var fundamental = 95;
-  [1, 2, 2.51, 3.98].forEach(function(mult, idx){
-    var osc = ac.createOscillator();
-    osc.type = idx===0 ? 'sawtooth' : 'sine';
-    osc.frequency.setValueAtTime(fundamental*mult, agora);
-    osc.frequency.linearRampToValueAtTime(fundamental*mult*0.94, agora + duracao); /* leve queda de tom no final, como buzina real */
-    var g = ac.createGain();
-    var vol = idx===0 ? 0.30 : 0.30/(idx*2.2);
-    g.gain.setValueAtTime(0.0001, agora);
-    g.gain.exponentialRampToValueAtTime(vol, agora + 0.25);
-    g.gain.setValueAtTime(vol, agora + duracao - 0.35);
-    g.gain.exponentialRampToValueAtTime(0.0001, agora + duracao);
-    osc.connect(g); g.connect(ac.destination);
-    osc.start(agora); osc.stop(agora + duracao + 0.05);
-  });
-}
-
-/* Peido: som cômico para marcar erro feio — oscilador grave com "wah" descendente e textura áspera */
-function tocarPeido(){
-  var ac = getAC();
-  var agora = ac.currentTime;
-  var duracao = 0.7;
-
-  var osc = ac.createOscillator();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(140, agora);
-  osc.frequency.linearRampToValueAtTime(70, agora + duracao*0.5);
-  osc.frequency.linearRampToValueAtTime(50, agora + duracao);
-
-  /* jitter: pequenas variações rápidas de frequência para dar a textura "molhada" */
-  var jitter = ac.createOscillator();
-  var jitterGanho = ac.createGain();
-  jitter.type = 'sine'; jitter.frequency.value = 35;
-  jitterGanho.gain.value = 18;
-  jitter.connect(jitterGanho); jitterGanho.connect(osc.frequency);
-
-  var shaper = ac.createWaveShaper();
-  var curva = new Float32Array(256);
-  for(var i=0;i<256;i++){ var x = i/128-1; curva[i] = Math.tanh(x*3.5); }
-  shaper.curve = curva;
-
-  var ganho = ac.createGain();
-  ganho.gain.setValueAtTime(0.0001, agora);
-  ganho.gain.exponentialRampToValueAtTime(0.22, agora + 0.03);
-  ganho.gain.setValueAtTime(0.20, agora + duracao*0.7);
-  ganho.gain.exponentialRampToValueAtTime(0.0001, agora + duracao);
-
-  osc.connect(shaper); shaper.connect(ganho); ganho.connect(ac.destination);
-  jitter.start(agora); osc.start(agora);
-  jitter.stop(agora + duracao + 0.05); osc.stop(agora + duracao + 0.05);
-}
-
-document.getElementById('btn-aplausos').addEventListener('click', tocarAplausos);
-document.getElementById('btn-apito').addEventListener('click', tocarApito);
-document.getElementById('btn-buzina').addEventListener('click', tocarBuzina);
-document.getElementById('btn-peido').addEventListener('click', tocarPeido);
+document.getElementById('btn-erro').addEventListener('click', function(){ tocar('erro'); });
+document.getElementById('btn-palmas1').addEventListener('click', function(){ tocar('palmas1'); });
+document.getElementById('btn-palmas2').addEventListener('click', function(){ tocar('palmas2'); });
 </script>
 </body>
 </html>
