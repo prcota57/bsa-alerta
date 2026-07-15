@@ -122,11 +122,12 @@ limiter.connect(ctx.destination);
 
 var GANHO = 1.35; // reforço de volume — ajustável se ainda estiver baixo
 
+var VERSAO = '2'; // aumentar a cada nova troca de som, força o iPhone a baixar de novo
 var arquivos = {
-  erro:    'sounds/erro.wav',
-  fail:    'sounds/fail-trombeta.wav',
-  palmas1: 'sounds/palmas-simples.wav',
-  palmas2: 'sounds/palmas-celebracao.wav'
+  erro:    'sounds/erro.wav?v=' + VERSAO,
+  fail:    'sounds/fail-trombeta.wav?v=' + VERSAO,
+  palmas1: 'sounds/palmas-simples.wav?v=' + VERSAO,
+  palmas2: 'sounds/palmas-celebracao.wav?v=' + VERSAO
 };
 
 var buffers = {};
