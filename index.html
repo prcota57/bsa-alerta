@@ -30,25 +30,30 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
 #topbar .sub { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 1px; }
 
 #stack {
-  flex: 1; display: flex; flex-direction: column; gap: 14px;
+  flex: 1; display: flex; flex-direction: column; gap: 12px;
   padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
 .btn-sound {
   flex: 1; border: none; border-radius: 22px; display: flex; flex-direction: row;
   align-items: center; justify-content: center; gap: 14px;
   font-family: inherit; color: #fff; -webkit-appearance: none; appearance: none;
-  transition: transform 0.08s ease;
+  transition: transform 0.08s ease; position: relative;
 }
 .btn-sound:active { transform: scale(0.97); }
-.btn-sound .emoji { font-size: 42px; line-height: 1; }
-.btn-sound .label { font-size: 18px; font-weight: 800; text-align: left; }
+.btn-sound .emoji { font-size: 40px; line-height: 1; }
+.btn-sound .label { font-size: 17px; font-weight: 800; text-align: left; }
 .btn-sound .label small { display:block; font-size:12px; font-weight:600; opacity:0.75; margin-top:2px; }
+.btn-sound .tag {
+  position: absolute; top: 10px; right: 14px; font-size: 10px; font-weight: 700;
+  background: rgba(0,0,0,0.25); color: rgba(255,255,255,0.85); padding: 3px 8px; border-radius: 20px;
+}
 
 #btn-erro      { background: linear-gradient(155deg, #8E5CD9, #6A3DB5); }
 #btn-palmas1   { background: linear-gradient(155deg, #2FA8E0, #1B7DB5); }
 #btn-palmas2   { background: linear-gradient(155deg, #FFB020, #E8871C); }
+#btn-fail      { background: linear-gradient(155deg, #E85C5C, #B53D3D); }
 
-#wakeBadge {
+#status {
   position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 0; right: 0;
   text-align: center; font-size: 11px; color: rgba(255,255,255,0.3); pointer-events: none;
 }
@@ -68,6 +73,12 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
   <button class="btn-sound" id="btn-erro" type="button">
     <span class="emoji">&#9973;</span>
     <span class="label">Erro<small>ohh ouuu</small></span>
+    <span class="tag">TESTE</span>
+  </button>
+  <button class="btn-sound" id="btn-fail" type="button">
+    <span class="emoji">&#128308;</span>
+    <span class="label">Fail<small>trombeta</small></span>
+    <span class="tag">TESTE</span>
   </button>
   <button class="btn-sound" id="btn-palmas1" type="button">
     <span class="emoji">&#128079;</span>
@@ -79,7 +90,7 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
   </button>
 </div>
 
-<div id="wakeBadge">tela ativa durante o uso</div>
+<div id="status">tela ativa durante o uso</div>
 
 <script>
 /* ---------- Wake Lock: mantém a tela acesa enquanto o módulo estiver aberto ---------- */
@@ -96,22 +107,58 @@ document.addEventListener('visibilitychange', function(){
 });
 pedirWakeLock();
 
-/* ---------- Áudio: arquivos mp3 reais, tocados via elemento <audio> ---------- */
-var sons = {
-  erro: new Audio('sounds/erro.mp3'),
-  palmas1: new Audio('sounds/palmas-simples.mp3'),
-  palmas2: new Audio('sounds/palmas-celebracao.mp3')
+/* ---------- Áudio: Web Audio API — decodifica tudo em memória uma vez, toque fica instantâneo ---------- */
+var AudioCtx = window.AudioContext || window.webkitAudioContext;
+var ctx = new AudioCtx();
+
+/* limitador suave pra poder reforçar o ganho sem estourar/distorcer */
+var limiter = ctx.createDynamicsCompressor();
+limiter.threshold.value = -6;
+limiter.knee.value = 6;
+limiter.ratio.value = 12;
+limiter.attack.value = 0.001;
+limiter.release.value = 0.1;
+limiter.connect(ctx.destination);
+
+var GANHO = 1.35; // reforço de volume — ajustável se ainda estiver baixo
+
+var arquivos = {
+  erro:    'sounds/erro.wav',
+  fail:    'sounds/fail-trombeta.wav',
+  palmas1: 'sounds/palmas-simples.wav',
+  palmas2: 'sounds/palmas-celebracao.wav'
 };
-/* pré-carrega para tocar sem atraso no primeiro toque */
-Object.keys(sons).forEach(function(k){ sons[k].preload = 'auto'; sons[k].load(); });
+
+var buffers = {};
+var statusEl = document.getElementById('status');
+
+function carregarSom(chave, url){
+  return fetch(url)
+    .then(function(r){ return r.arrayBuffer(); })
+    .then(function(data){ return ctx.decodeAudioData(data); })
+    .then(function(decoded){ buffers[chave] = decoded; })
+    .catch(function(e){ console.error('Falha ao carregar', chave, e); });
+}
+
+Promise.all(Object.keys(arquivos).map(function(k){ return carregarSom(k, arquivos[k]); }))
+  .then(function(){ statusEl.textContent = 'tela ativa durante o uso'; })
+  .catch(function(){ statusEl.textContent = 'erro ao carregar sons'; });
 
 function tocar(chave){
-  var audio = sons[chave];
-  audio.currentTime = 0;
-  audio.play().catch(function(e){ /* alguns navegadores bloqueiam até 1º toque do usuário — normal */ });
+  if(ctx.state === 'suspended'){ ctx.resume(); }
+  var buffer = buffers[chave];
+  if(!buffer) return; // ainda carregando
+  var source = ctx.createBufferSource();
+  source.buffer = buffer;
+  var gain = ctx.createGain();
+  gain.gain.value = GANHO;
+  source.connect(gain);
+  gain.connect(limiter);
+  source.start(0);
 }
 
 document.getElementById('btn-erro').addEventListener('click', function(){ tocar('erro'); });
+document.getElementById('btn-fail').addEventListener('click', function(){ tocar('fail'); });
 document.getElementById('btn-palmas1').addEventListener('click', function(){ tocar('palmas1'); });
 document.getElementById('btn-palmas2').addEventListener('click', function(){ tocar('palmas2'); });
 </script>
