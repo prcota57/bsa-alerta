@@ -31,7 +31,7 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
 
 #stack {
   flex: 1; display: flex; flex-direction: column; gap: 12px;
-  padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding: 16px; padding-bottom: 8px;
 }
 .btn-sound {
   flex: 1; border: none; border-radius: 22px; display: flex; flex-direction: row;
@@ -54,9 +54,12 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
 #btn-fail      { background: linear-gradient(155deg, #E85C5C, #B53D3D); }
 
 #status {
-  position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 0; right: 0;
-  text-align: center; font-size: 11px; color: rgba(255,255,255,0.3); pointer-events: none;
+  flex-shrink: 0; text-align: center; font-size: 12px; color: rgba(255,255,255,0.5);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding-left: 16px; padding-right: 16px; word-break: break-word;
 }
+#status.erro { color: #FF6B6B; font-weight: 700; }
+#status.pronto { color: #6BE07A; }
 </style>
 </head>
 <body>
@@ -90,9 +93,21 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
   </button>
 </div>
 
-<div id="status">tela ativa durante o uso</div>
+<div id="status">carregando...</div>
 
 <script>
+var statusEl = document.getElementById('status');
+function setStatus(txt, tipo){
+  statusEl.textContent = txt;
+  statusEl.className = tipo || '';
+}
+
+/* captura qualquer erro de JS e mostra na tela, já que não dá pra ver o console no celular */
+window.onerror = function(msg, url, linha){
+  setStatus('Erro no app: ' + msg + ' (linha ' + linha + ')', 'erro');
+  return false;
+};
+
 /* ---------- Wake Lock: mantém a tela acesa enquanto o módulo estiver aberto ---------- */
 var wakeLock = null;
 async function pedirWakeLock(){
@@ -107,22 +122,8 @@ document.addEventListener('visibilitychange', function(){
 });
 pedirWakeLock();
 
-/* ---------- Áudio: Web Audio API — decodifica tudo em memória uma vez, toque fica instantâneo ---------- */
-var AudioCtx = window.AudioContext || window.webkitAudioContext;
-var ctx = new AudioCtx();
-
-/* limitador suave pra poder reforçar o ganho sem estourar/distorcer */
-var limiter = ctx.createDynamicsCompressor();
-limiter.threshold.value = -6;
-limiter.knee.value = 6;
-limiter.ratio.value = 12;
-limiter.attack.value = 0.001;
-limiter.release.value = 0.1;
-limiter.connect(ctx.destination);
-
-var GANHO = 1.35; // reforço de volume — ajustável se ainda estiver baixo
-
-var VERSAO = '2'; // aumentar a cada nova troca de som, força o iPhone a baixar de novo
+/* ---------- Áudio ---------- */
+var VERSAO = '3'; // aumentar a cada troca de som pra forçar o iPhone a baixar de novo
 var arquivos = {
   erro:    'sounds/erro.wav?v=' + VERSAO,
   fail:    'sounds/fail-trombeta.wav?v=' + VERSAO,
@@ -130,25 +131,74 @@ var arquivos = {
   palmas2: 'sounds/palmas-celebracao.wav?v=' + VERSAO
 };
 
+var modoSimples = false; // se o Web Audio falhar, usa <audio> comum como reserva
+var sonsSimples = {};
+var ctx, limiter;
+var GANHO = 1.35;
 var buffers = {};
-var statusEl = document.getElementById('status');
 
-function carregarSom(chave, url){
-  return fetch(url)
-    .then(function(r){ return r.arrayBuffer(); })
-    .then(function(data){ return ctx.decodeAudioData(data); })
-    .then(function(decoded){ buffers[chave] = decoded; })
-    .catch(function(e){ console.error('Falha ao carregar', chave, e); });
+try{
+  var AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if(!AudioCtx) throw new Error('Web Audio não suportado');
+  ctx = new AudioCtx();
+  limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -6;
+  limiter.knee.value = 6;
+  limiter.ratio.value = 12;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.1;
+  limiter.connect(ctx.destination);
+}catch(e){
+  modoSimples = true;
 }
 
-Promise.all(Object.keys(arquivos).map(function(k){ return carregarSom(k, arquivos[k]); }))
-  .then(function(){ statusEl.textContent = 'tela ativa durante o uso'; })
-  .catch(function(){ statusEl.textContent = 'erro ao carregar sons'; });
+if(modoSimples){
+  Object.keys(arquivos).forEach(function(k){
+    sonsSimples[k] = new Audio(arquivos[k]);
+    sonsSimples[k].preload = 'auto';
+  });
+  setStatus('pronto (modo simples)', 'pronto');
+} else {
+  var carregados = 0;
+  var total = Object.keys(arquivos).length;
+  var falhas = [];
+
+  function carregarSom(chave, url){
+    return fetch(url)
+      .then(function(r){
+        if(!r.ok) throw new Error('HTTP ' + r.status + ' em ' + url);
+        return r.arrayBuffer();
+      })
+      .then(function(data){ return ctx.decodeAudioData(data); })
+      .then(function(decoded){
+        buffers[chave] = decoded;
+        carregados++;
+        setStatus('carregando sons... ' + carregados + '/' + total);
+      })
+      .catch(function(e){
+        falhas.push(chave + ': ' + e.message);
+      });
+  }
+
+  Promise.all(Object.keys(arquivos).map(function(k){ return carregarSom(k, arquivos[k]); }))
+    .then(function(){
+      if(falhas.length > 0){
+        setStatus('Falha ao carregar: ' + falhas.join(' | '), 'erro');
+      } else {
+        setStatus('pronto ✓ (' + total + ' sons)', 'pronto');
+      }
+    });
+}
 
 function tocar(chave){
+  if(modoSimples){
+    var el = sonsSimples[chave];
+    if(el){ el.currentTime = 0; el.play().catch(function(e){ setStatus('Não tocou: ' + e.message, 'erro'); }); }
+    return;
+  }
   if(ctx.state === 'suspended'){ ctx.resume(); }
   var buffer = buffers[chave];
-  if(!buffer) return; // ainda carregando
+  if(!buffer){ setStatus('Som ainda não carregou, aguarde...', 'erro'); return; }
   var source = ctx.createBufferSource();
   source.buffer = buffer;
   var gain = ctx.createGain();
