@@ -48,9 +48,7 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
   background: rgba(0,0,0,0.25); color: rgba(255,255,255,0.85); padding: 3px 8px; border-radius: 20px;
 }
 
-#btn-erro      { background: linear-gradient(155deg, #8E5CD9, #6A3DB5); }
 #btn-palmas1   { background: linear-gradient(155deg, #2FA8E0, #1B7DB5); }
-#btn-palmas2   { background: linear-gradient(155deg, #FFB020, #E8871C); }
 #btn-fail      { background: linear-gradient(155deg, #E85C5C, #B53D3D); }
 
 #status {
@@ -73,23 +71,13 @@ body { display: flex; flex-direction: column; background: #0B0F10; }
 </div>
 
 <div id="stack">
-  <button class="btn-sound" id="btn-erro" type="button">
-    <span class="emoji">&#9973;</span>
-    <span class="label">Erro<small>ohh ouuu</small></span>
-    <span class="tag">TESTE</span>
-  </button>
   <button class="btn-sound" id="btn-fail" type="button">
     <span class="emoji">&#128308;</span>
     <span class="label">Fail<small>trombeta</small></span>
-    <span class="tag">TESTE</span>
   </button>
   <button class="btn-sound" id="btn-palmas1" type="button">
     <span class="emoji">&#128079;</span>
     <span class="label">Palmas<small>simples</small></span>
-  </button>
-  <button class="btn-sound" id="btn-palmas2" type="button">
-    <span class="emoji">&#127881;</span>
-    <span class="label">Palmas<small>celebração</small></span>
   </button>
 </div>
 
@@ -123,12 +111,10 @@ document.addEventListener('visibilitychange', function(){
 pedirWakeLock();
 
 /* ---------- Áudio ---------- */
-var VERSAO = '3'; // aumentar a cada troca de som pra forçar o iPhone a baixar de novo
+var VERSAO = '4'; // aumentar a cada troca de som pra forçar o iPhone a baixar de novo
 var arquivos = {
-  erro:    'sounds/erro.wav?v=' + VERSAO,
   fail:    'sounds/fail-trombeta.wav?v=' + VERSAO,
-  palmas1: 'sounds/palmas-simples.wav?v=' + VERSAO,
-  palmas2: 'sounds/palmas-celebracao.wav?v=' + VERSAO
+  palmas1: 'sounds/palmas-simples.wav?v=' + VERSAO
 };
 
 var modoSimples = false; // se o Web Audio falhar, usa <audio> comum como reserva
@@ -208,10 +194,8 @@ function tocar(chave){
   source.start(0);
 }
 
-document.getElementById('btn-erro').addEventListener('click', function(){ tocar('erro'); });
 document.getElementById('btn-fail').addEventListener('click', function(){ tocar('fail'); });
 document.getElementById('btn-palmas1').addEventListener('click', function(){ tocar('palmas1'); });
-document.getElementById('btn-palmas2').addEventListener('click', function(){ tocar('palmas2'); });
 </script>
 </body>
 </html>
